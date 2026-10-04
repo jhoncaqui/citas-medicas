@@ -1,6 +1,0 @@
-{
-  "name": "Citas Médicas",
-  "description": "Sistema de gestión y reserva de citas médicas conversando o paso a paso para clínicas.",
-  "permissions": [],
-  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

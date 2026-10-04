@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    RNF-08: solo HTTPS.
+
+    `cleartextTrafficPermitted="false"` bloquea a nivel de plataforma
+    cualquier peticion HTTP en claro, incluso si una URL mal configurada
+    llegara a intentarse. El cliente `ApiClient` hace la misma comprobacion
+    antes de enviar; esta es la segunda barrera.
+
+    No se declara ninguna excepcion de dominio: tampoco para desarrollo. El
+    backend debe exponerse por HTTPS tambien en el entorno de pruebas.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

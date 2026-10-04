@@ -60,3 +60,6 @@ android/key.properties
 # Artefactos de distribucion (binarios grandes)
 dist/*.apk
 dist/*.aab
+
+# Herramientas de sesion de Claude Code (no forman parte del proyecto)
+.claude/

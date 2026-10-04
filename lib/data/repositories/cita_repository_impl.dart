@@ -88,7 +88,12 @@ class CitaRepositoryImpl implements CitaRepository {
     );
     // La cita recien creada entra en la cache sin esperar a la proxima
     // sincronizacion: el historial debe verla de inmediato.
-    await _local?.guardarCita(dto);
+    // El try/catch protege plataformas donde sqflite no esta disponible
+    // (Flutter Web): la confirmacion ya existe en memoria y no debe fallar
+    // porque la cache local no pudo escribir.
+    try {
+      await _local?.guardarCita(dto);
+    } catch (_) {}
     return dto.aDominio();
   });
 
@@ -110,11 +115,13 @@ class CitaRepositoryImpl implements CitaRepository {
         // Solo se cachea el historial completo: guardar un listado filtrado
         // borraria del cache las citas que el filtro dejo fuera.
         if (estado == null) {
-          await _local?.guardarHistorial(
-            pacienteId: pacienteId,
-            citas: dtos,
-            momento: momento,
-          );
+          try {
+            await _local?.guardarHistorial(
+              pacienteId: pacienteId,
+              citas: dtos,
+              momento: momento,
+            );
+          } catch (_) {}
         }
 
         _ultimoHistorialDesdeCache = false;
@@ -146,14 +153,18 @@ class CitaRepositoryImpl implements CitaRepository {
       citaId: citaId,
       nuevoCupoId: nuevoCupoId,
     );
-    await _local?.guardarCita(dto);
+    try {
+      await _local?.guardarCita(dto);
+    } catch (_) {}
     return dto.aDominio();
   });
 
   @override
   Future<Resultado<Cita>> cancelar(String citaId) => _ejecutar(() async {
     final dto = await _fuente.cancelar(citaId);
-    await _local?.guardarCita(dto);
+    try {
+      await _local?.guardarCita(dto);
+    } catch (_) {}
     return dto.aDominio();
   });
 

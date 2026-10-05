@@ -332,6 +332,96 @@ void main() {
     });
   });
 
+  group('Relleno con contexto (memoria de la conversacion)', () {
+    // Se usa el reconocedor real para ejercitar la extraccion desde el texto.
+    ConversacionViewModel crearConReal(ReservaViewModel reserva) =>
+        ConversacionViewModel(
+          AsistenteRepositoryImpl(
+            // El reloj se inyecta para que «manana» sea determinista.
+            FakeAsistenteDataSource(latencia: Duration.zero, ahora: reloj),
+          ),
+          reserva,
+          reloj: reloj,
+        );
+
+    test('el escenario del paciente: "quiero una cita" -> especialidad -> dia',
+        () async {
+      final reserva = crearReserva();
+      await reserva.iniciar();
+      final vm = crearConReal(reserva);
+
+      await vm.enviar('quiero una cita');
+      expect(
+        vm.mensajes.last.texto,
+        Cadenas.asistenteFaltaEspecialidad,
+        reason: 'Una peticion clara debe avanzar a preguntar la especialidad',
+      );
+      expect(vm.espera, EsperaAsistente.especialidad);
+
+      await vm.enviar('medicina general');
+      expect(
+        vm.mensajes.last.texto,
+        Cadenas.asistenteFaltaFecha,
+        reason: 'La respuesta se interpreta como especialidad, sin reclasificar',
+      );
+      expect(vm.espera, EsperaAsistente.fecha);
+
+      await vm.enviar('manana');
+      expect(vm.fechaPorConfirmar, DateTime(2026, 9, 17));
+      expect(vm.espera, EsperaAsistente.nada);
+    });
+
+    test('tolera un sinonimo como respuesta de especialidad', () async {
+      final reserva = crearReserva();
+      await reserva.iniciar();
+      final vm = crearConReal(reserva);
+
+      await vm.enviar('quiero una cita');
+      await vm.enviar('pediatra');
+
+      expect(vm.mensajes.last.texto, Cadenas.asistenteFaltaFecha);
+    });
+
+    test('si no reconoce el dato, repregunta y cuenta como intento fallido',
+        () async {
+      final reserva = crearReserva();
+      await reserva.iniciar();
+      final vm = crearConReal(reserva);
+
+      await vm.enviar('quiero una cita');
+      expect(vm.intentosFallidos, 0);
+
+      await vm.enviar('aaaaa');
+      expect(vm.mensajes.last.texto, Cadenas.asistenteNoReconociEspecialidad);
+      expect(vm.intentosFallidos, 1);
+
+      await vm.enviar('bbbbb');
+      expect(
+        vm.debeOfrecerFlujoGuiado,
+        isTrue,
+        reason: 'El fallback al flujo guiado sigue vivo durante el relleno',
+      );
+    });
+
+    test('RN-09 gana aunque se este rellenando', () async {
+      final reserva = crearReserva();
+      await reserva.iniciar();
+      final vm = crearConReal(reserva);
+
+      await vm.enviar('quiero una cita');
+      expect(vm.espera, EsperaAsistente.especialidad);
+
+      await vm.enviar('me duele la cabeza');
+
+      expect(vm.mensajes.last.texto, Cadenas.derivacionCanalAtencion);
+      expect(
+        vm.espera,
+        EsperaAsistente.nada,
+        reason: 'La derivacion corta el relleno; no se mezclan sintomas',
+      );
+    });
+  });
+
   test('RNF-10: al motor no se le envia identificador de paciente', () async {
     final asistente = _AsistenteFijo(
       const RespuestaAsistente(

@@ -41,4 +41,15 @@ class FeatureFlags {
     'SEMBRAR_CUENTAS_DEMO',
     defaultValue: !kReleaseMode,
   );
+
+  /// Muestra el microfono de dictado por voz en el asistente. Es una funcion
+  /// del propio dispositivo (no depende de ningun servicio externo), por eso
+  /// nace encendida; si el dispositivo no tiene reconocimiento de voz, el
+  /// boton se oculta en tiempo de ejecucion.
+  ///
+  /// Se puede apagar con `--dart-define=USAR_DICTADO=false`.
+  static const bool usarDictado = bool.fromEnvironment(
+    'USAR_DICTADO',
+    defaultValue: true,
+  );
 }

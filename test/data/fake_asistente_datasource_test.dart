@@ -130,6 +130,38 @@ void main() {
     });
   });
 
+  group('Tolerancia de especialidades', () {
+    test('reconoce un sinonimo de profesion: "pediatra"', () {
+      final r = FakeAsistenteDataSource.analizar('pediatra', ahora: ahora);
+      expect(r.entidades['especialidad'], 'esp-demo-02');
+    });
+
+    test('reconoce una forma corta: "cardio"', () {
+      final r = FakeAsistenteDataSource.analizar(
+        'quiero cardio',
+        ahora: ahora,
+      );
+      expect(r.entidades['especialidad'], 'esp-demo-03');
+    });
+
+    test('tolera un error de tecleo: "cardilogia"', () {
+      final r = FakeAsistenteDataSource.analizar('cardilogia', ahora: ahora);
+      expect(r.entidades['especialidad'], 'esp-demo-03');
+    });
+
+    test('devuelve la entidad aunque no haya intencion (relleno)', () {
+      // «medicina general» no trae ningun verbo de intencion, pero SI es una
+      // especialidad: debe devolverse para que el relleno de la conversacion
+      // la use.
+      final r = FakeAsistenteDataSource.analizar(
+        'medicina general',
+        ahora: ahora,
+      );
+      expect(r.intencion, IntencionAsistente.noReconocida.clave);
+      expect(r.entidades['especialidad'], 'esp-demo-01');
+    });
+  });
+
   group('RN-09 — guardarrail clinico', () {
     test('un mensaje con sintomas se deriva al canal de atencion', () {
       final r = FakeAsistenteDataSource.analizar(

@@ -211,10 +211,15 @@ class FakeAsistenteDataSource implements AsistenteDataSource {
     final (intencion, fuertes, debiles) = _clasificar(normalizado);
 
     if (intencion == IntencionAsistente.noReconocida) {
-      return const RespuestaAsistenteDto(
+      // Se devuelven las entidades aunque no se reconozca la intencion: en una
+      // conversacion en curso, «medicina general» o «manana» no traen ningun
+      // verbo de intencion pero SI son la respuesta a lo que el asistente
+      // acaba de preguntar. El ViewModel las usa para seguir el relleno.
+      return RespuestaAsistenteDto(
         intencion: 'no_reconocida',
         confianza: 0.0,
         respuesta: Cadenas.asistenteNoEntendi,
+        entidades: entidades,
       );
     }
 
@@ -289,15 +294,10 @@ class FakeAsistenteDataSource implements AsistenteDataSource {
     final entidades = <String, String>{};
 
     // Especialidad: se busca por nombre en el catalogo, nunca se deduce del
-    // sintoma (RN-09).
-    for (final especialidad in Fixtures.especialidades) {
-      if (!especialidad.activa) continue;
-      final nombre = FechasNaturales.normalizar(especialidad.nombre);
-      if (normalizado.contains(nombre)) {
-        entidades['especialidad'] = especialidad.id;
-        break;
-      }
-    }
+    // sintoma (RN-09). Tolera sinonimos de campo/profesion y errores de
+    // tecleo.
+    final especialidadId = _extraerEspecialidad(normalizado);
+    if (especialidadId != null) entidades['especialidad'] = especialidadId;
 
     // Profesional, por apellido o nombre completo.
     for (final profesional in Fixtures.profesionales) {
@@ -327,5 +327,100 @@ class FakeAsistenteDataSource implements AsistenteDataSource {
     }
 
     return entidades;
+  }
+
+  // -------------------------------------------------------------------
+  // Reconocimiento tolerante de especialidades
+  // -------------------------------------------------------------------
+
+  /// Sinonimos de campo o de profesion (nunca sintomas ni partes del cuerpo:
+  /// RN-09 prohibe deducir la especialidad de un criterio clinico). Las claves
+  /// son el nombre normalizado de la especialidad.
+  static const Map<String, List<String>> _sinonimosEspecialidad =
+      <String, List<String>>{
+        'medicina general': <String>['general', 'clinica general'],
+        'pediatria': <String>['pediatra', 'pediatrico', 'pediatrica'],
+        'cardiologia': <String>['cardio', 'cardiologo', 'cardiologa'],
+        'dermatologia': <String>['dermatologo', 'dermatologa'],
+      };
+
+  static const Set<String> _palabrasVacias = <String>{
+    'de', 'del', 'la', 'el', 'los', 'las', 'y', 'con', 'para', 'una', 'un',
+  };
+
+  /// Busca una especialidad activa en el texto. Tres pasadas, de la mas
+  /// estricta a la mas tolerante: nombre completo, palabra clave o sinonimo, y
+  /// por ultimo un token casi identico a una clave (un typo). Nunca deduce la
+  /// especialidad de un sintoma.
+  static String? _extraerEspecialidad(String normalizado) {
+    // 1) Nombre completo como subcadena ("medicina general").
+    for (final e in Fixtures.especialidades) {
+      if (!e.activa) continue;
+      if (normalizado.contains(FechasNaturales.normalizar(e.nombre))) {
+        return e.id;
+      }
+    }
+    // 2) Palabra clave del nombre o sinonimo, como palabra completa.
+    for (final e in Fixtures.especialidades) {
+      if (!e.activa) continue;
+      for (final clave in _clavesEspecialidad(e.nombre)) {
+        if (_contienePalabra(normalizado, clave)) return e.id;
+      }
+    }
+    // 3) Tolerancia a un error de tecleo: token casi igual a una clave.
+    final tokens = normalizado
+        .split(RegExp('[^a-z0-9]+'))
+        .where((t) => t.length >= 5)
+        .toList();
+    for (final e in Fixtures.especialidades) {
+      if (!e.activa) continue;
+      for (final clave in _clavesEspecialidad(e.nombre)) {
+        if (clave.length < 5) continue;
+        for (final token in tokens) {
+          if (_distanciaEdicion(token, clave) <= 1) return e.id;
+        }
+      }
+    }
+    return null;
+  }
+
+  static List<String> _clavesEspecialidad(String nombre) {
+    final normal = FechasNaturales.normalizar(nombre);
+    final claves = <String>{};
+    for (final palabra in normal.split(' ')) {
+      if (palabra.length >= 4 && !_palabrasVacias.contains(palabra)) {
+        claves.add(palabra);
+      }
+    }
+    claves.addAll(_sinonimosEspecialidad[normal] ?? const <String>[]);
+    return claves.toList();
+  }
+
+  static bool _contienePalabra(String texto, String palabra) {
+    if (palabra.contains(' ')) return texto.contains(palabra);
+    return RegExp('\\b${RegExp.escape(palabra)}\\b').hasMatch(texto);
+  }
+
+  /// Distancia de Levenshtein, acotada: con mas de dos caracteres de
+  /// diferencia de longitud no vale la pena calcularla.
+  static int _distanciaEdicion(String a, String b) {
+    if ((a.length - b.length).abs() > 2) return 3;
+    final fila = List<int>.generate(b.length + 1, (j) => j);
+    for (var i = 1; i <= a.length; i++) {
+      var previo = fila[0];
+      fila[0] = i;
+      for (var j = 1; j <= b.length; j++) {
+        final tmp = fila[j];
+        final costo = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+        final borrar = fila[j] + 1;
+        final insertar = fila[j - 1] + 1;
+        final sustituir = previo + costo;
+        fila[j] = borrar < insertar
+            ? (borrar < sustituir ? borrar : sustituir)
+            : (insertar < sustituir ? insertar : sustituir);
+        previo = tmp;
+      }
+    }
+    return fila[b.length];
   }
 }

@@ -10,9 +10,16 @@ import '../../domain/repositories/asistente_repository.dart';
 import '../../l10n/cadenas.dart';
 import 'reserva_viewmodel.dart';
 
+/// Dato que el asistente esta esperando del paciente en este momento.
+///
+/// Es la memoria de la conversacion: cuando el asistente pregunta «¿para que
+/// especialidad?», la siguiente respuesta («medicina general») se interpreta
+/// como ESE dato, sin exigir que vuelva a traer un verbo de intencion.
+enum EsperaAsistente { nada, especialidad, fecha }
+
 /// HU-03 — Solicitud de cita en lenguaje natural.
 ///
-/// Tres reglas de comportamiento que no son negociables:
+/// Cuatro reglas de comportamiento que no son negociables:
 ///
 /// 1. **Umbral de confianza.** Por debajo de `AppConfig.umbralConfianza` el
 ///    asistente pide reformulacion y **no ejecuta ninguna accion**.
@@ -22,6 +29,9 @@ import 'reserva_viewmodel.dart';
 ///    reserva sin depender del modelo.
 /// 3. **La fecha resuelta siempre se muestra** para que el paciente la
 ///    confirme. Ninguna interpretacion se da por buena en silencio.
+/// 4. **Memoria de la conversacion.** Mientras se rellena una reserva, cada
+///    respuesta se interpreta en el contexto de lo que se acaba de preguntar,
+///    acumulando lo ya dicho en lugar de reclasificar desde cero.
 class ConversacionViewModel extends ChangeNotifier {
   ConversacionViewModel(
     this._asistente,
@@ -75,6 +85,10 @@ class ConversacionViewModel extends ChangeNotifier {
 
   Map<String, String> _entidadesPendientes = const <String, String>{};
 
+  /// Dato que el asistente espera ahora mismo (memoria de la conversacion).
+  EsperaAsistente _espera = EsperaAsistente.nada;
+  EsperaAsistente get espera => _espera;
+
   /// `true` cuando ya hay especialidad y fecha y se puede pasar a horarios.
   bool _listoParaHorarios = false;
   bool get listoParaHorarios => _listoParaHorarios;
@@ -95,7 +109,30 @@ class ConversacionViewModel extends ChangeNotifier {
     );
 
     await resultado.when(
-      exito: _procesarRespuesta,
+      exito: (respuesta) async {
+        // RN-09 — la derivacion gana siempre, incluso a mitad de un relleno:
+        // el texto puede traer sintomas y no debe mezclarse con la reserva.
+        if (respuesta.derivadoACanalAtencion) {
+          _espera = EsperaAsistente.nada;
+          _entidadesPendientes = const <String, String>{};
+          _agregar(
+            RolMensaje.asistente,
+            respuesta.respuesta,
+            intencion: respuesta.intencion,
+            confianza: respuesta.confianza,
+          );
+          return;
+        }
+
+        // Si estabamos esperando un dato concreto, la respuesta se interpreta
+        // en ese contexto en lugar de reclasificarse desde cero.
+        if (_espera != EsperaAsistente.nada) {
+          await _rellenarContexto(respuesta);
+          return;
+        }
+
+        await _procesarRespuesta(respuesta);
+      },
       fallo: (fallo) async {
         _agregar(RolMensaje.asistente, fallo.mensaje);
         _intentosFallidos++;
@@ -108,19 +145,6 @@ class ConversacionViewModel extends ChangeNotifier {
   }
 
   Future<void> _procesarRespuesta(RespuestaAsistente respuesta) async {
-    // RN-09 — derivacion al canal de atencion. No cuenta como intento
-    // fallido: el asistente entendio perfectamente, simplemente no es algo
-    // que le corresponda responder.
-    if (respuesta.derivadoACanalAtencion) {
-      _agregar(
-        RolMensaje.asistente,
-        respuesta.respuesta,
-        intencion: respuesta.intencion,
-        confianza: respuesta.confianza,
-      );
-      return;
-    }
-
     // Umbral de confianza: por debajo, se pide reformulacion y NO se ejecuta
     // ninguna accion.
     if (!respuesta.superaUmbral(AppConfig.umbralConfianza)) {
@@ -151,19 +175,60 @@ class ConversacionViewModel extends ChangeNotifier {
       return;
     }
 
-    _entidadesPendientes = respuesta.entidades;
-    await _pedirLoQueFalta(respuesta);
+    _entidadesPendientes = Map<String, String>.of(respuesta.entidades);
+    await _avanzarReserva(
+      intencion: respuesta.intencion,
+      confianza: respuesta.confianza,
+    );
   }
 
-  Future<void> _pedirLoQueFalta(RespuestaAsistente respuesta) async {
-    final entidades = respuesta.entidades;
+  /// Interpreta la respuesta del paciente como el dato que se le acaba de
+  /// pedir. Si aporta algo util (especialidad, fecha, turno o profesional), se
+  /// acumula y se avanza; si no, se repregunta en contexto y cuenta como
+  /// intento fallido para que el fallback al flujo guiado siga funcionando.
+  Future<void> _rellenarContexto(RespuestaAsistente respuesta) async {
+    final nuevas = respuesta.entidades;
+    final aporta =
+        nuevas.containsKey('especialidad') ||
+        nuevas.containsKey('fecha') ||
+        nuevas.containsKey('turno') ||
+        nuevas.containsKey('profesional');
+
+    if (!aporta) {
+      _intentosFallidos++;
+      _agregar(
+        RolMensaje.asistente,
+        _espera == EsperaAsistente.especialidad
+            ? Cadenas.asistenteNoReconociEspecialidad
+            : Cadenas.asistenteNoReconociFecha,
+      );
+      return;
+    }
+
+    _intentosFallidos = 0;
+    _flujoGuiadoOfrecido = false;
+    _entidadesPendientes = <String, String>{..._entidadesPendientes, ...nuevas};
+    await _avanzarReserva(
+      intencion: IntencionAsistente.reservar,
+      confianza: respuesta.confianza,
+    );
+  }
+
+  /// Decide el siguiente paso a partir de lo acumulado en
+  /// [_entidadesPendientes] y recuerda que dato queda pendiente ([_espera]).
+  Future<void> _avanzarReserva({
+    required IntencionAsistente intencion,
+    required double confianza,
+  }) async {
+    final entidades = _entidadesPendientes;
 
     if (!entidades.containsKey('especialidad')) {
+      _espera = EsperaAsistente.especialidad;
       _agregar(
         RolMensaje.asistente,
         Cadenas.asistenteFaltaEspecialidad,
-        intencion: respuesta.intencion,
-        confianza: respuesta.confianza,
+        intencion: intencion,
+        confianza: confianza,
       );
       // Se aplica lo que si vino, para no perderlo.
       await _reserva.aplicarEntidades(entidades);
@@ -172,11 +237,12 @@ class ConversacionViewModel extends ChangeNotifier {
 
     final fechaIso = entidades['fecha'];
     if (fechaIso == null) {
+      _espera = EsperaAsistente.fecha;
       _agregar(
         RolMensaje.asistente,
         Cadenas.asistenteFaltaFecha,
-        intencion: respuesta.intencion,
-        confianza: respuesta.confianza,
+        intencion: intencion,
+        confianza: confianza,
       );
       await _reserva.aplicarEntidades(entidades);
       return;
@@ -186,17 +252,19 @@ class ConversacionViewModel extends ChangeNotifier {
     // paciente la confirme antes de buscar horarios.
     final fecha = DateTime.tryParse(fechaIso);
     if (fecha == null) {
+      _espera = EsperaAsistente.fecha;
       _agregar(RolMensaje.asistente, Cadenas.asistenteFaltaFecha);
       return;
     }
 
+    _espera = EsperaAsistente.nada;
     _fechaPorConfirmar = fecha;
     _agregar(
       RolMensaje.asistente,
       '${Cadenas.asistenteConfirmaFecha}: ${FormatoFecha.fechaLarga(fecha)}. '
       '¿Es correcto?',
-      intencion: respuesta.intencion,
-      confianza: respuesta.confianza,
+      intencion: intencion,
+      confianza: confianza,
     );
   }
 
@@ -217,6 +285,14 @@ class ConversacionViewModel extends ChangeNotifier {
 
     _agregar(RolMensaje.paciente, Cadenas.asistenteNoEsCorrecto);
     _fechaPorConfirmar = null;
+    // Se descarta la fecha rechazada y se vuelve a esperar una: la siguiente
+    // respuesta se interpretara como la nueva fecha.
+    _entidadesPendientes = <String, String>{..._entidadesPendientes}
+      ..remove('fecha')
+      ..remove('fecha_expresion')
+      ..remove('turno')
+      ..remove('hora');
+    _espera = EsperaAsistente.fecha;
     _agregar(RolMensaje.asistente, Cadenas.asistenteFaltaFecha);
     notifyListeners();
   }

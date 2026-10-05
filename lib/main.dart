@@ -11,6 +11,7 @@ import 'core/mapas/servicio_mapas.dart';
 import 'core/network/connectivity_service.dart';
 import 'core/notificaciones/servicio_recordatorios.dart';
 import 'core/security/almacen_seguro.dart';
+import 'core/voz/servicio_dictado.dart';
 import 'data/datasources/fake/cuentas_demo.dart';
 import 'data/datasources/fake/fake_asistente_datasource.dart';
 import 'data/datasources/fake/fake_catalogo_datasource.dart';
@@ -79,6 +80,7 @@ class Arranque extends StatelessWidget {
         ),
         Provider<ConnectivityService>(create: (_) => ConnectivityService()),
         Provider<ServicioMapas>(create: (_) => const ServicioMapasImpl()),
+        Provider<ServicioDictado>(create: (_) => ServicioDictadoImpl()),
 
         // sqflite: historial consultable sin conexion (HU-09).
         Provider<BaseDatos>(create: (_) => BaseDatos()),

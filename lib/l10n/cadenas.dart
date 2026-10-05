@@ -144,6 +144,16 @@ class Cadenas {
   static const String asistenteEscribeAqui = 'Escribe tu mensaje';
   static const String asistenteEnviar = 'Enviar mensaje';
 
+  // Dictado por voz (voz a texto).
+  static const String dictadoTooltip = 'Dictar por voz';
+  static const String dictadoDetener = 'Detener el dictado';
+  static const String dictadoNoDisponible =
+      'El dictado por voz no esta disponible en este dispositivo. Puedes '
+      'escribir tu mensaje.';
+  static const String dictadoError =
+      'No se pudo usar el dictado. Intentalo de nuevo o escribe el mensaje.';
+  static const String semanticaDictar = 'Dictar el mensaje por voz';
+
   static const String asistenteNoEntendi =
       'No te entendi bien. ¿Puedes decirlo de otra manera?';
 
@@ -163,6 +173,14 @@ class Cadenas {
   static const String asistenteFaltaEspecialidad =
       '¿Para que especialidad necesitas la cita?';
   static const String asistenteFaltaFecha = '¿Para que dia la necesitas?';
+
+  /// Re-pregunta cuando el paciente responde pero no se reconoce el dato.
+  static const String asistenteNoReconociEspecialidad =
+      'No reconoci esa especialidad. Escribela por su nombre, por ejemplo '
+      '"Medicina General", "Pediatria" o "Cardiologia".';
+  static const String asistenteNoReconociFecha =
+      'No reconoci la fecha. Dime un dia, por ejemplo "manana", "el lunes" '
+      'o "15 de octubre".';
 
   /// Se muestra siempre la fecha resuelta para que el paciente la confirme:
   /// ninguna interpretacion se da por buena en silencio.

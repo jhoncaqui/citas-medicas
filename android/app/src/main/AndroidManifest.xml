@@ -8,12 +8,22 @@
          cita, nunca al arrancar. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Dictado por voz en el asistente: se solicita en tiempo de ejecucion al
+         pulsar el microfono, nunca al arrancar. Sin este permiso el chat
+         sigue funcionando por teclado. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- Para abrir las indicaciones de desplazamiento en la aplicacion de
          mapas del dispositivo (HU-10), sin atar el proyecto a un proveedor. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="geo" />
+        </intent>
+        <!-- Reconocimiento de voz en el dispositivo (dictado del asistente).
+             Android 11+ exige declarar el servicio que se va a consultar. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 

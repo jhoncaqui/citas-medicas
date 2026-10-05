@@ -8,6 +8,7 @@ import '../../domain/entities/mensaje_conversacion.dart';
 import '../../l10n/cadenas.dart';
 import '../viewmodels/conversacion_viewmodel.dart';
 import '../viewmodels/reserva_viewmodel.dart';
+import '../widgets/boton_dictado.dart';
 
 /// HU-03 — Reserva en lenguaje natural.
 class ConversacionScreen extends StatefulWidget {
@@ -230,7 +231,19 @@ class _Redaccion extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          // Dictado por voz: lo reconocido se escribe en el campo para que el
+          // paciente lo revise y envie. Nada se envia por voz sin confirmar.
+          BotonDictado(
+            habilitado: habilitado,
+            onTexto: (texto) {
+              controlador.text = texto;
+              controlador.selection = TextSelection.fromPosition(
+                TextPosition(offset: texto.length),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
           SizedBox.square(
             dimension: AppTheme.areaTactilMinima,
             child: IconButton.filled(
